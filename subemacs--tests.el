@@ -1,36 +1,36 @@
 ;; -*- mode:emacs-lisp;coding:utf-8-unix;lexical-binding:t;byte-compile-dynamic:t; -*-
 
 (require 'ert)
-(require 'subemacs-eval)
+(require 'subemacs)
 
 
 ;;;;;; Macros
 
 
-(defmacro subemacs-eval--test-form (form)
+(defmacro subemacs--test-form (form)
   `(should (equal (subemacs-eval ',form)
                   ,form)))
 
 
-(defmacro subemacs-eval-progn--test-body (&rest body)
-  `(should (equal (subemacs-eval-progn ,@body)
+(defmacro subemacs-progn--test-body (&rest body)
+  `(should (equal (subemacs-progn ,@body)
                   (progn ,@body))))
 
 
 ;;;;;; Test cases
 
 
-(ert-deftest subemacs-eval-1-basic ()
+(ert-deftest subemacs-1-basic ()
   "Simple test cases for `subemacs-eval'"
-  (subemacs-eval--test-form (list 1 2 3))
-  (subemacs-eval--test-form load-path)
-  (subemacs-eval--test-form (require 'cl-lib))
-  (subemacs-eval--test-form (vector :a 1 :b 2
+  (subemacs--test-form (list 1 2 3))
+  (subemacs--test-form load-path)
+  (subemacs--test-form (require 'cl-lib))
+  (subemacs--test-form (vector :a 1 :b 2
                                     (list (cons 'a 1)
                                           (cons 'b 2)))))
 
 
-(ert-deftest subemacs-eval-2-long-sexps ()
+(ert-deftest subemacs-2-long-sexps ()
   "Check if evaluating long expressions, where a temp file may be
 needed, is supported."
   (let ((long-expression 
@@ -40,7 +40,7 @@ needed, is supported."
                    (eval long-expression)))))
 
 
-(ert-deftest subemacs-eval-3-errors ()
+(ert-deftest subemacs-3-errors ()
   "Does `subemacs-eval' correctly re-signal errors?"
   (should-error (subemacs-eval '(error "foo")) :type 'error)
   (should-error (subemacs-eval '(car "foo")) :type 'wrong-type-argument)
@@ -56,9 +56,9 @@ needed, is supported."
                 :type 'wrong-type-argument))
 
 
-(ert-deftest subemacs-eval-4-unhandleable-error ()
+(ert-deftest subemacs-4-unhandleable-error ()
   "If an error is signaled, which does not correctly specify its
-'error-conditions, a 'subemacs-eval-error is expected."
+'error-conditions, a 'subemacs-error is expected."
   (should-error (subemacs-eval '(signal 'myerr 'foo)
-                               :type 'subemacs-eval-error)))
+                               :type 'subemacs-error)))
 

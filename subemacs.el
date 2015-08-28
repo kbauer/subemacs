@@ -25,6 +25,58 @@
 ;; Using the function `subemacs-eval', a form can be synchronously
 ;; evaluated in a freshly started emacs process, which inherits only
 ;; the `load-path' from the current process. 
+;; 
+;; Other values must be passed explicitly by making them part of the
+;; form, e.g. by writing 
+;; 
+;;     (let ((my-int 10))
+;;       (subemacs-eval `(+ 5 ',my-int)))
+;;         
+;;         => 15
+;; 
+;; `subemacs-eval' also supports errors raised by Emacs' `signal' and
+;; related functions, and displays messages emitted in the subprocess. 
+;; 
+;; 
+;; 
+;; ## Clean compilation
+;; 
+;; The original motivation for writing this package was emacs lisp
+;; byte-compilation. When byte-compiling a file from within a running
+;; emacs process, missing `require' calls for dependencies and typos
+;; may be hidden from the byte compiler due to the environment already
+;; containing them. 
+;; 
+;; Such issues may not become apparent until the code is executed by a
+;; user, who does not load the same files during startup. While they
+;; can be diagnosed by testing code with `emacs -Q`, this solution is
+;; inconvenient. 
+;; 
+;; Instead, compiling emacs lisp files in a clean process by default
+;; turns the byte-compiler into a powerful ad-hoc tool to identify
+;; issues from byte-compiler warnings. 
+;; 
+;; Functions `subemacs-byte-compile-file' and
+;; `subemacs-byte-recompile-directory' are therefore provided and also
+;; serve as a demonstration of the use of `subemacs-eval'.
+;; 
+;; 
+;; 
+;; ## Why not subemacs-funcall?
+;; 
+;; Originally I had planned to implement `subemacs-funcall', passing
+;; functions to the subprocess would allow compile-time checking of
+;; the passed expressions for issues. 
+;; 
+;; Passing a `lambda' form to a hypothetical `subemacs-funcall' in an
+;; environment where `lexical-binding' is enabled, will capture the
+;; lexical environment into the resulting `closure' form and make it
+;; available to the subprocess. This behaviour however is not
+;; documented and may break in the future. As a consequence an
+;; implementation of `subemacs-funcall' would either require enforcing
+;; unexpected limitations (e.g. not allowing closures) or risk the
+;; creation of code that depends on an undocumented feature of current
+;; Emacs versions.
 
 ;;; Code:
 
@@ -37,7 +89,7 @@
 ;;;; Auxiliary Functions 
 
 
-(defun subemacs-eval--binary-path ()
+(defun subemacs--binary-path ()
   "Path to emacs executable of this emacs process if known"
   (concat 
    (or invocation-directory
@@ -46,51 +98,51 @@
        (error "Cannot determine path to emacs executable"))))
 
 
-(defun subemacs-eval--output-buffer ()
+(defun subemacs--output-buffer ()
   (get-buffer-create " *subemacs-eval*"))
 
 
-(defun subemacs-eval--reraise-error (err)
+(defun subemacs--reraise-error (err)
   (signal (car err) (cdr err)))
 
 
-(defun subemacs-eval--1-call-direct (form)
-  (call-process (subemacs-eval--binary-path) nil (subemacs-eval--output-buffer) nil 
+(defun subemacs--1-call-direct (form)
+  (call-process (subemacs--binary-path) nil (subemacs--output-buffer) nil 
                 "--batch" "--eval" (format "%S" form)))
 
 
-(defun subemacs-eval--2-call-with-tempfile (form)
-  (let ((temp-file (make-temp-file "subemacs-eval-input-file-" nil ".el.tmp")))
+(defun subemacs--2-call-with-tempfile (form)
+  (let ((temp-file (make-temp-file "subemacs-input-file-" nil ".el.tmp")))
     (unwind-protect
         (progn 
           (with-temp-file temp-file
             (print form (current-buffer)))
-          (call-process (subemacs-eval--binary-path) nil (subemacs-eval--output-buffer) nil
+          (call-process (subemacs--binary-path) nil (subemacs--output-buffer) nil
                         "--batch" "--load" temp-file))
       (delete-file temp-file))))
 
 
-(defconst subemacs-eval--inherit-vars 
+(defconst subemacs--inherit-vars 
   (list 'load-path))
 
 
-(defun subemacs-eval--make-form (form)
+(defun subemacs--make-form (form)
   "Internal;
 Create the full form passed to the subprocess for `subemacs-eval'
 Passes values to parent process as alist."
   `(progn 
-     ,@(cl-loop for var in subemacs-eval--inherit-vars
+     ,@(cl-loop for var in subemacs--inherit-vars
                 collect `(setq ,var ',(symbol-value var)))
      (print 
-      (let ((subemacs-eval-error t))
+      (let ((subemacs-error t))
         (unwind-protect
             (condition-case err
                 (prog1 (list (cons 'value (eval ',form)))
-                  (setq subemacs-eval-error nil))
+                  (setq subemacs-error nil))
               (error 
                (prog1 (list (cons 'error err))
-                 (setq subemacs-eval-error nil))))
-          (when subemacs-eval-error
+                 (setq subemacs-error nil))))
+          (when subemacs-error
             (print (cons 'error 
                          (list 'error 
                                (cons 'reason 'unknown-error-type)
@@ -98,10 +150,10 @@ Passes values to parent process as alist."
             (kill-emacs 1)))))))
 
 
-(put 'subemacs-eval-error 'error-conditions '(subemacs-eval-error error))
+(put 'subemacs-error 'error-conditions '(subemacs-error error))
 
 
-(defun subemacs-eval--readable-form-p (form)
+(defun subemacs--readable-form-p (form)
   "Is FORM a sexp, that can be `read' from its `print' representation?"
   (condition-case nil
       (prog1 t
@@ -113,7 +165,7 @@ Passes values to parent process as alist."
     (invalid-read-syntax nil)))
 
 
-(defun subemacs-eval--read--expression (prompt &optional initial-contents)
+(defun subemacs--read--expression (prompt &optional initial-contents)
   ;; Copied from `read--expression' in `simple.el' because I didn't
   ;; want to depend on an undocumented, possibly changing function. 
   (let ((minibuffer-completing-symbol t))
@@ -128,12 +180,12 @@ Passes values to parent process as alist."
 
 
 (eval-and-compile
-  (defun subemacs-eval--assert (value predicate)
+  (defun subemacs--assert (value predicate)
     (unless (funcall predicate value)
       (error "Assertion failed: %S, %S" value predicate))))
 
 
-(defmacro subemacs-eval--function-let (bindings &rest body)
+(defmacro subemacs--function-let (bindings &rest body)
   "Temporarily change bindings of functions in dynamic (i.e. global) scope.
 
 Bindings uses as syntax
@@ -148,17 +200,17 @@ Beware: Dangerous. Used on fundamental functions like `car' may
 break the emacs session."
   (declare (indent 1))
   (cl-loop for (symbol function) in bindings 
-           do (subemacs-eval--assert symbol #'symbolp)
-           do (subemacs-eval--assert (eval function)
+           do (subemacs--assert symbol #'symbolp)
+           do (subemacs--assert (eval function)
                                      (lambda (e) 
                                        (or (symbolp e) (functionp e)))))
-  `(subemacs-eval--function-let-1 
+  `(subemacs--function-let-1 
     (list ,@(cl-loop for (symbol function) in bindings 
                     collect `(cons #',symbol ,function)))
     (lambda () ,@body)))
 
 
-(defun subemacs-eval--function-let-1 (binding-alist body-func)
+(defun subemacs--function-let-1 (binding-alist body-func)
   (let ((original-bindings-alist 
          (cl-loop for (symbol . _) in binding-alist 
                   collect (cons symbol (symbol-function symbol)))))
@@ -215,15 +267,15 @@ interface may prevent passing FORM as an argument to the
 subprocess. In this case a temporary file is used. Even on
 Windows however, that limit should be in the range of tens of
 thousands of characters. "
-  (cl-check-type form subemacs-eval--readable-form-p)
+  (cl-check-type form subemacs--readable-form-p)
   ;; The use of a fixed buffer is for debugging primarily. 
   ;; It may be changed to a temporary buffer at any time. 
-  (with-current-buffer (subemacs-eval--output-buffer)
+  (with-current-buffer (subemacs--output-buffer)
     (erase-buffer)
     (condition-case nil
-        (subemacs-eval--1-call-direct (subemacs-eval--make-form form))
+        (subemacs--1-call-direct (subemacs--make-form form))
       (file-error 
-       (subemacs-eval--2-call-with-tempfile (subemacs-eval--make-form form))))
+       (subemacs--2-call-with-tempfile (subemacs--make-form form))))
     (let ((returned-form 
            (progn (goto-char (point-max))
                   (backward-sexp)
@@ -234,11 +286,11 @@ thousands of characters. "
                   (buffer-substring-no-properties (point-min) (point)))))
       (message "%s" message-contents)
       (cond ((assq 'error returned-form)
-             (subemacs-eval--reraise-error (cdr (assq 'error returned-form))))
+             (subemacs--reraise-error (cdr (assq 'error returned-form))))
             ((assq 'value returned-form)
              (cdr (assq 'value returned-form)))
             (t (signal 'error
-                       (list "Invalid form returned from subemacs"
+                       (list "Invalid form returned from subemacs-eval"
                              returned-form)))))))
 
 
@@ -247,7 +299,7 @@ thousands of characters. "
   "Like `eval-expression' but performing the evaluation through
 `subemacs-eval'. Shares the history with `eval-expression'."
   (interactive 
-   (list (subemacs-eval--read--expression "Subemacs-eval: ")
+   (list (subemacs--read--expression "Subemacs-eval: ")
          current-prefix-arg))
   (let ((debug-on-error t))
     (eval-expression (list 'quote (subemacs-eval exp)) 
@@ -255,7 +307,7 @@ thousands of characters. "
 
 
 ;;;###autoload
-(defun subemacs-eval-byte-compile-file (filename &optional load)
+(defun subemacs-byte-compile-file (filename &optional load)
   "Like `byte-compile-file' but evaluated through `subemacs-eval'.
 
 I.e. the file is compiled in a clean emacs session and has to
@@ -305,12 +357,12 @@ error.
 
 
 ;;;###autoload
-(defun subemacs-eval-byte-recompile-directory (directory &optional arg force)
+(defun subemacs-byte-recompile-directory (directory &optional arg force)
   "Like `byte-recompile-directory' but using
-`subemacs-eval-byte-compile-file' insteaf of `byte-compile-file'."
+`subemacs-byte-compile-file' insteaf of `byte-compile-file'."
   (interactive "DByte recompile directory: \nP")
-  (subemacs-eval--function-let 
-      ((byte-compile-file #'subemacs-eval-byte-compile-file))
+  (subemacs--function-let 
+      ((byte-compile-file #'subemacs-byte-compile-file))
     (byte-recompile-directory directory arg force)))
 
 
@@ -321,18 +373,18 @@ error.
 ;;; and may depend on the current implementation in a not future-proof
 ;;; manner, so I removed them but left them in for reference. 
 ;;
-;; (defun subemacs-eval-function (function)
+;; (defun subemacs-function (function)
 ;;   "Removed. Closures may allow 
 ;;   (subemacs-eval `(funcall #',function)))
 ;; 
 ;; 
-;; (defmacro subemacs-eval-progn (&rest body)
+;; (defmacro subemacs-progn (&rest body)
 ;;   "doc"
 ;;   (declare (indent 0))
-;;   `(subemacs-eval-function 
-;;     (lambda () "Generated by `subemacs-eval-progn'" 
+;;   `(subemacs-function 
+;;     (lambda () "Generated by `subemacs-progn'" 
 ;;       ,@body)))
   
 
 (provide 'subemacs)
-;;; subemacs-eval.el ends here
+;;; subemacs.el ends here
