@@ -1,8 +1,3 @@
- [//]:  -*- coding: utf-8-unix -*-
- [//]:   Generated manually from commentary section.
- [//]:   Should be automated in the future. -->
-
-
 # Subemacs — Evaluating expressions in a subprocess
 
 Using the function `subemacs-eval`, a form can be synchronously
