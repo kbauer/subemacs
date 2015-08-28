@@ -1,6 +1,6 @@
-<-- -*- coding: utf-8-unix -*-
-    Generated manually from commentary section.
-    Should be automated in the future. -->
+ [//]:  -*- coding: utf-8-unix -*-
+ [//]:   Generated manually from commentary section.
+ [//]:   Should be automated in the future. -->
 
 
 # Subemacs — Evaluating expressions in a subprocess
