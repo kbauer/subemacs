@@ -25,7 +25,7 @@
 ;; # Subemacs — Evaluating expressions in a subprocess
 ;; 
 ;; Using the function `subemacs-eval', a form can be synchronously
-;; evaluated in a freshly started emacs process, which inherits only
+;; evaluated in a freshly started Emacs process, which inherits only
 ;; the `load-path' from the current process. 
 ;; 
 ;; Other values must be passed explicitly by making them part of the
@@ -43,18 +43,18 @@
 ;; 
 ;; ## Clean compilation
 ;; 
-;; The original motivation for writing this package was emacs lisp
-;; byte-compilation. When byte-compiling a file from within a running
-;; emacs process, missing `require' calls for dependencies and typos
+;; The original motivation for writing this package was Emacs Lisp
+;; byte-compilation.  When byte-compiling a file from within a running
+;; Emacs process, missing `require' calls for dependencies and typos
 ;; may be hidden from the byte compiler due to the environment already
 ;; containing them. 
 ;; 
 ;; Such issues may not become apparent until the code is executed by a
-;; user, who does not load the same files during startup. While they
+;; user, who does not load the same files during startup.  While they
 ;; can be diagnosed by testing code with `emacs -Q`, this solution is
 ;; inconvenient. 
 ;; 
-;; Instead, compiling emacs lisp files in a clean process by default
+;; Instead, compiling Emacs Lisp files in a clean process by default
 ;; turns the byte-compiler into a powerful ad-hoc tool to identify
 ;; issues from byte-compiler warnings. 
 ;; 
@@ -73,8 +73,8 @@
 ;; Passing a `lambda' form to a hypothetical `subemacs-funcall' in an
 ;; environment where `lexical-binding' is enabled, will capture the
 ;; lexical environment into the resulting `closure' form and make it
-;; available to the subprocess. This behaviour however is not
-;; documented and may break in the future. As a consequence an
+;; available to the subprocess.  This behaviour however is not
+;; documented and may break in the future.  As a consequence an
 ;; implementation of `subemacs-funcall' would either require enforcing
 ;; unexpected limitations (e.g. not allowing closures) or risk the
 ;; creation of code that depends on an undocumented feature of current
@@ -94,7 +94,7 @@
 
 
 (defun subemacs--binary-path ()
-  "Path to emacs executable of this emacs process if known"
+  "Path to Emacs executable of this Emacs process if known."
   (concat 
    (or invocation-directory
        (error "Cannot determine path to emacs executable"))
@@ -102,26 +102,38 @@
        (error "Cannot determine path to emacs executable"))))
 
 
-(defun subemacs--output-buffer ()
+(defconst subemacs-output-buffer-name " *subemacs-eval*"
+  "Name of the buffer used by `subemacs-eval' for capturing output of the Emacs subprocess.")
+
+
+(defun subemacs-output-buffer ()
+  "Return and possibly create the output buffers used by `subemacs-eval'."
   (get-buffer-create " *subemacs-eval*"))
 
 
 (defun subemacs--reraise-error (err)
+  "ERR: An error as catched by `condition-case'."
   (signal (car err) (cdr err)))
 
 
 (defun subemacs--1-call-direct (form)
-  (call-process (subemacs--binary-path) nil (subemacs--output-buffer) nil 
+  "Execute FORM in Emacs subprocess, passing FORM as exec argument."
+  (call-process (subemacs--binary-path) nil (subemacs-output-buffer) nil 
                 "--batch" "--eval" (format "%S" form)))
 
 
 (defun subemacs--2-call-with-tempfile (form)
+  "Execute FORM in Emacs subprocess, passing FORM through a temporary file.
+
+This is needed due to length restrictions on exec argument
+strings, which is especially likely to interfere with normal
+operation on Windows."
   (let ((temp-file (make-temp-file "subemacs-input-file-" nil ".el.tmp")))
     (unwind-protect
         (progn 
           (with-temp-file temp-file
             (print form (current-buffer)))
-          (call-process (subemacs--binary-path) nil (subemacs--output-buffer) nil
+          (call-process (subemacs--binary-path) nil (subemacs-output-buffer) nil
                         "--batch" "--load" temp-file))
       (delete-file temp-file))))
 
@@ -131,8 +143,11 @@
 
 
 (defun subemacs--make-form (form)
-  "Internal;
+  "Internal.
+
 Create the full form passed to the subprocess for `subemacs-eval'
+from the use-supplied form FORM.
+
 Passes values to parent process as alist."
   `(progn 
      ,@(cl-loop for var in subemacs--inherit-vars
@@ -170,8 +185,10 @@ Passes values to parent process as alist."
 
 
 (defun subemacs--read--expression (prompt &optional initial-contents)
-  ;; Copied from `read--expression' in `simple.el' because I didn't
-  ;; want to depend on an undocumented, possibly changing function. 
+  "Internal.
+Copied from `read--expression' in `simple.el'.
+I didn't want to depend on an undocumented, possibly changing function.
+PROMPT, INITIAL-CONTENTS should be self-explanatory."   
   (let ((minibuffer-completing-symbol t))
     (minibuffer-with-setup-hook
         (lambda ()
@@ -190,7 +207,7 @@ Passes values to parent process as alist."
 
 
 (defmacro subemacs--function-let (bindings &rest body)
-  "Temporarily change bindings of functions in dynamic (i.e. global) scope.
+  "Rebind global functions according to BINDINGS while executing BODY.
 
 Bindings uses as syntax
 
@@ -201,7 +218,7 @@ where SYMBOL identifies the function to be rebound and FUNCTION
 its replacement (which may be a symbol).
 
 Beware: Dangerous. Used on fundamental functions like `car' may
-break the emacs session."
+break the Emacs session."
   (declare (indent 1))
   (cl-loop for (symbol function) in bindings 
            do (subemacs--assert symbol #'symbolp)
@@ -215,6 +232,7 @@ break the emacs session."
 
 
 (defun subemacs--function-let-1 (binding-alist body-func)
+  "See `subemacs--function-let'."
   (let ((original-bindings-alist 
          (cl-loop for (symbol . _) in binding-alist 
                   collect (cons symbol (symbol-function symbol)))))
@@ -230,9 +248,9 @@ break the emacs session."
 
 
 (defun subemacs-eval (form)
-  "Evaluate FORM in an emacs subprocess.
+  "Evaluate FORM in an Emacs subprocess.
 
-FORM will be passed as a string to a new emacs session and
+FORM will be passed as a string to a new Emacs session and
 evaluated there. The result will be returned to the current
 session as return value of the `subemacs-eval' function call.
 
@@ -270,11 +288,11 @@ When FORM is very long, limitations of the system level ‘exec’
 interface may prevent passing FORM as an argument to the
 subprocess. In this case a temporary file is used. Even on
 Windows however, that limit should be in the range of tens of
-thousands of characters. "
+thousands of characters."
   (cl-check-type form subemacs--readable-form-p)
   ;; The use of a fixed buffer is for debugging primarily. 
   ;; It may be changed to a temporary buffer at any time. 
-  (with-current-buffer (subemacs--output-buffer)
+  (with-current-buffer (subemacs-output-buffer)
     (erase-buffer)
     (condition-case nil
         (subemacs--1-call-direct (subemacs--make-form form))
@@ -300,8 +318,9 @@ thousands of characters. "
 
 ;;;###autoload
 (defun subemacs-eval-expression (exp &optional insert-value)
-  "Like `eval-expression' but performing the evaluation through
-`subemacs-eval'. Shares the history with `eval-expression'."
+  "Like `eval-expression' but using `subemacs-eval'. 
+
+Shares the history with `eval-expression'."
   (interactive 
    (list (subemacs--read--expression "Subemacs-eval: ")
          current-prefix-arg))
@@ -312,17 +331,15 @@ thousands of characters. "
 
 ;;;###autoload
 (defun subemacs-byte-compile-file (filename &optional load)
-  "Like `byte-compile-file' but evaluated through `subemacs-eval'.
+  "Compile FILENAME through `subemacs-eval'. 
 
-I.e. the file is compiled in a clean emacs session and has to
+I.e. the file is compiled in a clean Emacs session and has to
 `require' all `features' it depends on itself.
 
 This makes identifying missing `require's easier, as they will
 raise compilation warnings, while in the main emacs sessions
 dependencies loaded previously by other files will mask the
-error.
-
-"
+error."
   ;; Interactive form copied from `byte-compile-file'
   (interactive
    (let ((file buffer-file-name)
