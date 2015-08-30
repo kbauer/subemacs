@@ -4,6 +4,9 @@
 
 ;; Author: Klaus-Dieter Bauer <bauer.klaus.dieter@gmail.com>
 ;; Keywords: extensions, lisp, multiprocessing
+;; Version: 1.0.0
+;; Requires: ((emacs "24"))
+;; URL: https://github.com/kbauer/subemacs
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
