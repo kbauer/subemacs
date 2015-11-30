@@ -1,6 +1,6 @@
 ;; -*- lexical-binding: t; -*-
 
-(require 'subemacs-eval)
+(require 'subemacs)
 (require 'cl-macs)
 
 

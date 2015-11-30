@@ -55,3 +55,9 @@ implementation of `subemacs-funcall` would either require enforcing
 unexpected limitations (e.g. not allowing closures) or risk the
 creation of code that depends on an undocumented feature of current
 Emacs versions.
+
+## Changelog
+
+### v1.0
+
+Original release. Supports exclusively synchronous execution. 
