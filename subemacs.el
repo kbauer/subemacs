@@ -23,7 +23,15 @@
 
 ;;; Commentary:
 
-;;
+;; ## Possible deprecation?
+;; 
+;; I have recently come across [async.el](https://github.com/jwiegley/emacs-async). 
+;; It implements a superset of the core functionality of `subemacs`, with
+;; the function `async-sandbox` being a replacement for `subemacs-eval`. 
+;; 
+;; The interactive functions from `subemacs` remain potentially useful, 
+;; but for package development [async.el](https://github.com/jwiegley/emacs-async)
+;; should be preferred.
 ;;
 ;; # Subemacs — Evaluating expressions in a subprocess
 ;; 
