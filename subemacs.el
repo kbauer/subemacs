@@ -25,13 +25,27 @@
 
 ;; ## Possible deprecation?
 ;; 
-;; I have recently come across [async.el](https://github.com/jwiegley/emacs-async). 
-;; It implements a superset of the core functionality of `subemacs`, with
-;; the function `async-sandbox` being a replacement for `subemacs-eval`. 
+;; I have recently come across
+;; [async.el](https://github.com/jwiegley/emacs-async). It implements
+;; a superset of the core functionality of `subemacs`, with the
+;; function `async-sandbox` being a replacement for `subemacs-eval`.
 ;; 
-;; The interactive functions from `subemacs` remain potentially useful, 
-;; but for package development [async.el](https://github.com/jwiegley/emacs-async)
-;; should be preferred.
+;; The interactive functions from `subemacs` remain potentially
+;; useful, but for package development
+;; [async.el](https://github.com/jwiegley/emacs-async) should be
+;; preferred.
+;; 
+;; One possibly important difference is the handling of output.
+;; `subemacs-eval` forwards messages to the parent process, while the
+;; `async.el` functions discard them.
+;; 
+;; ~~~
+;; TODO Another possible usecase: Chaining external commands and elisp.
+;; TODO     Currently emacs has no good method to execute multiple
+;; TODO     external commands in an asynchronous shell buffer, 
+;; TODO     executing emacs lisp in between.
+;; ~~~
+;; 
 ;;
 ;; # Subemacs — Evaluating expressions in a subprocess
 ;; 
