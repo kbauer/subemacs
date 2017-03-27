@@ -355,7 +355,7 @@ Shares the history with `eval-expression'."
 
 
 ;;;###autoload
-(defun subemacs-byte-compile-file (filename &optional load)
+(defun subemacs-byte-compile-file (filename &optional load log-buffer)
   "Compile FILENAME through `subemacs-eval'. 
 
 I.e. the file is compiled in a clean Emacs session and has to
@@ -364,7 +364,18 @@ I.e. the file is compiled in a clean Emacs session and has to
 This makes identifying missing `require's easier, as they will
 raise compilation warnings, while in the main emacs sessions
 dependencies loaded previously by other files will mask the
-error."
+error.
+
+If LOAD is non-nil, load the compiled file after compiling
+successfully. Interactively it is determined by
+`current-prefix-arg'.
+
+LOG-BUFFER determines where the compilation log from the
+subprocess goes after completion. When nil, it defaults to
+`byte-compile-log-buffer'.
+
+Returns the return value of `byte-compile-file' in the
+subprocess, i.e. non-nil on success, nil on error."
   ;; Interactive form copied from `byte-compile-file'
   (interactive
    (let ((file buffer-file-name)
@@ -377,6 +388,7 @@ error."
 			     "Byte compile file: ")
 			   file-dir buffer-file-name nil)
 	   current-prefix-arg)))
+  (setq log-buffer (or log-buffer byte-compile-log-buffer))
   (let ((return
          (subemacs-eval
           `(progn
@@ -387,7 +399,7 @@ error."
               (list 'log-contents
                     (with-current-buffer (get-buffer-create byte-compile-log-buffer)
                       (buffer-string))))))))
-    (with-current-buffer (get-buffer-create byte-compile-log-buffer)
+    (with-current-buffer (get-buffer-create log-buffer)
       (let ((inhibit-read-only t))
         (with-selected-window (display-buffer (current-buffer))
           (goto-char (point-max))
