@@ -170,10 +170,6 @@ operation on Windows."
       (apply #'insert strings))))
 
 
-(defconst subemacs--inherit-vars 
-  (list 'load-path))
-
-
 (defun subemacs--make-form (form)
   "Internal.
 
@@ -181,24 +177,14 @@ Create the full form passed to the subprocess for `subemacs-eval'
 from the use-supplied form FORM.
 
 Passes values to parent process as alist."
-  `(progn 
-     ,@(cl-loop for var in subemacs--inherit-vars
-                collect `(setq ,var ',(symbol-value var)))
-     (prin1
-      (let ((subemacs-error t))
-        (unwind-protect
-            (condition-case err
-                (prog1 (list (cons 'value ,form))
-                  (setq subemacs-error nil))
-              (error 
-               (prog1 (list (cons 'error err))
-                 (setq subemacs-error nil))))
-          (when subemacs-error
-            (prin1 (cons 'error 
-                         (list 'error 
-                               (cons 'reason 'unknown-error-type)
-                               (cons 'form ',form))))
-            (kill-emacs 1)))))))
+  `(let ((load-path ',load-path)) 
+     (unwind-protect 
+         (progn 
+           (condition-case err
+               (prin1 (list (cons 'value ,form)))
+             (error (prin1 (list (cons 'error err)))))
+           (kill-emacs))
+       (prin1 (list (cons 'error '(error "Invalid error signal in subemacs process")))))))
 
 
 (put 'subemacs-error 'error-conditions '(subemacs-error error))
