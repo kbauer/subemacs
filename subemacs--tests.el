@@ -27,7 +27,14 @@
   (subemacs--test-form (require 'cl-lib))
   (subemacs--test-form (vector :a 1 :b 2
                                     (list (cons 'a 1)
-                                          (cons 'b 2)))))
+                                          (cons 'b 2))))
+  (subemacs-eval `(progn
+                    (message "MsgLine 1")
+                    (message "MsgLine 2")
+                    (message "MsgLine 3")))
+  (should (string=
+            subemacs-last-stdout
+            "MsgLine 1\nMsgLine 2\nMsgLine 3\n")))
 
 
 (ert-deftest subemacs-2-long-sexps ()

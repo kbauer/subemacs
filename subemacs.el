@@ -184,7 +184,7 @@ Passes values to parent process as alist."
   `(progn 
      ,@(cl-loop for var in subemacs--inherit-vars
                 collect `(setq ,var ',(symbol-value var)))
-     (print 
+     (prin1
       (let ((subemacs-error t))
         (unwind-protect
             (condition-case err
@@ -194,7 +194,7 @@ Passes values to parent process as alist."
                (prog1 (list (cons 'error err))
                  (setq subemacs-error nil))))
           (when subemacs-error
-            (print (cons 'error 
+            (prin1 (cons 'error 
                          (list 'error 
                                (cons 'reason 'unknown-error-type)
                                (cons 'form ',form))))
@@ -279,6 +279,10 @@ break the Emacs session."
 ;;;; PUBLIC FUNCTIONS AND COMMANDS 
 
 
+(defvar subemacs-last-stdout nil
+  "After `subemacs-eval', holds the stdout/stderr.")
+
+
 (cl-defun subemacs-eval (form &key discard-messages)
   "Evaluate FORM in an Emacs subprocess.
 
@@ -304,9 +308,10 @@ default) or by explicitly constructing FORM to set them, e.g.
     \`(let ((remote-value ',local-value))
         (do-it remote-value))
 
-The output of the subprocess that is NOT part of the final value
-is forwarded to the `*Messages*' buffer, unless DISCARD-MESSAGES
-is set.
+The stdout/stderr of the subprocess that is NOT part of the final
+value is forwarded to the `*Messages*' buffer, unless
+DISCARD-MESSAGES is nil. It is always available however through
+the `subemacs-last-stdout' variable.
 
 
 Additional Remarks 
@@ -341,6 +346,8 @@ thousands of characters."
                   (buffer-substring-no-properties (point-min) (point)))))
       (unless discard-messages
         (subemacs--append-to-buffer (messages-buffer) message-contents))
+      (setq subemacs-last-stdout message-contents)
+      
       (cond ((assq 'error returned-form)
              (subemacs--reraise-error (cdr (assq 'error returned-form))))
             ((assq 'value returned-form)
@@ -365,8 +372,7 @@ Shares the history with `eval-expression'."
 
 ;;;###autoload
 (cl-defun subemacs-byte-compile-file (file-name &optional load-1 &key 
-                                       load log-buffer erase nodisplay discard
-                                       run-ert)
+                                       load log-buffer erase nodisplay discard)
   "Compile FILE-NAME through `subemacs-eval'. 
 
 I.e. the file is compiled in a clean Emacs session and has to
@@ -401,15 +407,10 @@ compilation. This is useful for compiling e.g. the `.emacs' file
 to check for errors, without creating a confusion over whether to
 load `.emacs' or a likely outdated `.emacs.elc'.
 
-If RUN-ERT is non-nil, run `(ert RUN-ERT)' after loading
-the (compiled) file in the subprocess and include the result in
-LOG-BUFFER.
-
 INTERACTIVELY, FILE-NAME is `buffer-file-name', LOAD is
 determined by `current-prefix-arg', LOG-BUFFER is
 `messages-buffer', ERASE is t, and DISCARD is t if
-`buffer-file-name' doesn't match `emacs-lisp-file-regexp' and
-RUN-ERT is :new.
+`buffer-file-name' doesn't match `emacs-lisp-file-regexp'.
 "
   ;; Interactive form copied from `byte-compile-file'
   (interactive
@@ -419,7 +420,6 @@ RUN-ERT is :new.
         :load current-prefix-arg
         :erase t
         :log-buffer (messages-buffer)
-        :run-ert :new 
         :discard (not (string-match-p emacs-lisp-file-regexp (buffer-file-name))))))
       
   (setq load (or load-1 load))
@@ -434,21 +434,12 @@ RUN-ERT is :new.
             (subemacs-eval
               `(progn
                  (require 'bytecomp)
-                 (let ((compile-success (byte-compile-file ',file-name nil)))
-                   (list 
-                     compile-success
-                     (with-current-buffer (get-buffer-create byte-compile-log-buffer)
-                       (buffer-string))
-                     (when (and compile-success ',run-ert)
-                       (require 'ert)
-                       (load-file (byte-compile-dest-file ',file-name))
-                       (when (ert-select-tests ',run-ert t)
-                         (ert ',run-ert)
-                         (with-current-buffer (get-buffer-create "*ert*")
-                           (buffer-string)))))))))
+                 (list 
+                   (byte-compile-file ',file-name nil)
+                   (with-current-buffer (get-buffer-create byte-compile-log-buffer)
+                     (buffer-string))))))
           (compile-successful (nth 0 return))
-          (compile-log-contents (nth 1 return))
-          (test-results (nth 2 return)))
+          (compile-log-contents (nth 1 return)))
 
       (when (and discard compile-successful)
         (delete-file (byte-compile-dest-file file-name)))
@@ -466,14 +457,14 @@ RUN-ERT is :new.
           delim)
         (unless nodisplay (display-buffer log-buffer)))
 
-      (when (and test-results log-buffer)
-        (subemacs--append-to-buffer log-buffer test-results delim))
-
       (when (and load compile-successful)
         (load-file file-to-load)
         (when log-buffer
           (subemacs--append-to-buffer log-buffer delim)))
 
+      (when (eq (messages-buffer) log-buffer)
+        (message nil))
+            
       compile-successful)))
 
 
