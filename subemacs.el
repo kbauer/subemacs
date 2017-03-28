@@ -115,7 +115,7 @@
 
 ;;; TODO Consider option to run (load load-file-name) by default. 
 
-;;;; Auxiliary Functions 
+;;;; AUXILIARY FUNCTIONS 
 
 
 (defun subemacs--binary-path ()
@@ -161,6 +161,13 @@ operation on Windows."
           (call-process (subemacs--binary-path) nil (subemacs-output-buffer) nil
                         "--batch" "--load" temp-file))
       (delete-file temp-file))))
+
+
+(defun subemacs--append-to-buffer (buffer &rest strings)
+  (with-current-buffer buffer
+    (let ((inhibit-read-only t))
+      (goto-char (point-max))
+      (apply #'insert strings))))
 
 
 (defconst subemacs--inherit-vars 
@@ -218,7 +225,7 @@ PROMPT, INITIAL-CONTENTS should be self-explanatory."
     (minibuffer-with-setup-hook
         (lambda ()
           (add-hook 'completion-at-point-functions
-                    #'lisp-completion-at-point nil t)
+                    #'elisp-completion-at-point nil t)
           (run-hooks 'eval-expression-minibuffer-setup-hook))
       (read-from-minibuffer prompt initial-contents
                             read-expression-map t
@@ -269,7 +276,7 @@ break the Emacs session."
                do (fset symbol oldfunc)))))
 
 
-;;;; Public functions and commands 
+;;;; PUBLIC FUNCTIONS AND COMMANDS 
 
 
 (defun subemacs-eval (form)
@@ -355,8 +362,9 @@ Shares the history with `eval-expression'."
 
 
 ;;;###autoload
-(defun subemacs-byte-compile-file (filename &optional load log-buffer)
-  "Compile FILENAME through `subemacs-eval'. 
+(cl-defun subemacs-byte-compile-file (file-name &optional load-1 &key 
+                                       load log-buffer erase nodisplay discard)
+  "Compile FILE-NAME through `subemacs-eval'. 
 
 I.e. the file is compiled in a clean Emacs session and has to
 `require' all `features' it depends on itself.
@@ -366,52 +374,89 @@ raise compilation warnings, while in the main emacs sessions
 dependencies loaded previously by other files will mask the
 error.
 
+Returns the return value of `byte-compile-file' in the
+subprocess, i.e. non-nil on success, nil on error.
+
+LOAD-1 are provided for backwards compatibility. 
+
 If LOAD is non-nil, load the compiled file after compiling
-successfully. Interactively it is determined by
-`current-prefix-arg'.
+successfully. If LOAD is 'source, load FILE-NAME instead.
 
 LOG-BUFFER determines where the compilation log from the
-subprocess goes after completion. When nil, it defaults to
-`byte-compile-log-buffer'.
+subprocess goes after completion. Useful values include
+`nil' (discard the output), and `byte-compile-log-buffer'. Note
+that the compiler output always goes to `messages-buffer' too, as
+it is part of the emacs subprocess' stdout/stderr streams.
 
-Returns the return value of `byte-compile-file' in the
-subprocess, i.e. non-nil on success, nil on error."
+If NODISPLAY is nil, LOG-BUFFER if any will be displayed. 
+
+If ERASE is non-nil, LOG-BUFFER is any will be erased before
+inserting anything.
+
+If DISCARD is non-nil, delete the bytecode file after
+compilation. This is useful for compiling e.g. the `.emacs' file
+to check for errors, without creating a confusion over whether to
+load `.emacs' or a likely outdated `.emacs.elc'.
+
+INTERACTIVELY, FILE-NAME is `buffer-file-name', LOAD is
+determined by `current-prefix-arg', LOG-BUFFER is
+`messages-buffer', ERASE is t, and DISCARD is t if
+`buffer-file-name' doesn't match `emacs-lisp-file-regexp'.
+"
   ;; Interactive form copied from `byte-compile-file'
   (interactive
-   (let ((file buffer-file-name)
-	 (file-dir nil))
-     (and file
-	  (derived-mode-p 'emacs-lisp-mode)
-	  (setq file-dir (file-name-directory file)))
-     (list (read-file-name (if current-prefix-arg
-			       "Byte compile and load file: "
-			     "Byte compile file: ")
-			   file-dir buffer-file-name nil)
-	   current-prefix-arg)))
-  (setq log-buffer (or log-buffer byte-compile-log-buffer))
-  (let ((return
-         (subemacs-eval
-          `(progn
-             (require 'bytecomp)
-             (list
-              (list 'return-value
-                    (byte-compile-file ',filename nil))
-              (list 'log-contents
-                    (with-current-buffer (get-buffer-create byte-compile-log-buffer)
-                      (buffer-string))))))))
-    (with-current-buffer (get-buffer-create log-buffer)
-      (let ((inhibit-read-only t))
-        (with-selected-window (display-buffer (current-buffer))
-          (goto-char (point-max))
-          ;; (recenter 0)
-          (insert (format "(%s) %s\n" (format-time-string "%T" (current-time)) filename))
-          (insert (cadr (assq 'log-contents return)))
+    (progn 
+      (save-buffer)
+      (list (buffer-file-name) nil
+        :load current-prefix-arg
+        :erase t
+        :log-buffer (messages-buffer)
+        :discard (not (string-match-p emacs-lisp-file-regexp (buffer-file-name))))))
+      
+  (setq load (or load-1 load))
+  (let*((delim (if (eq (messages-buffer) log-buffer)
+                         "------------------------------------------------------------\n"
+                       ""))
+        (file-to-load 
+          (if (or discard (eq 'source load))
+              file-name
+            (byte-compile-dest-file file-name))))
+    (let*((return
+            (subemacs-eval
+              `(progn
+                 (require 'bytecomp)
+                 (list 
+                   (byte-compile-file ',file-name nil)
+                   (with-current-buffer (get-buffer-create byte-compile-log-buffer)
+                     (buffer-string))))))
+          (compile-successful (nth 0 return))
+          (compile-log-contents (nth 1 return)))
+
+      (when (and discard compile-successful)
+        (delete-file (byte-compile-dest-file file-name)))
+
+      (when log-buffer 
+        (with-current-buffer log-buffer
+          (when erase 
+            (let ((inhibit-read-only t)) (erase-buffer)))
           (unless (eq major-mode 'compilation-mode)
-            (compilation-mode)))))
-    (when (and load
-               (cadr (assq 'return-value return)))
-      (load-file (byte-compile-dest-file filename)))
-    (cadr (assq 'return-value return))))
+            (compilation-mode)))
+        (subemacs--append-to-buffer log-buffer
+          delim
+          (format "(%s) %s\n" (format-time-string "%T" (current-time)) file-name)
+          compile-log-contents
+          delim)
+        (unless nodisplay (display-buffer log-buffer)))
+
+      (when (and load compile-successful)
+        (load-file file-to-load)
+        (when log-buffer
+          (subemacs--append-to-buffer log-buffer delim)))
+
+      (when (eq (messages-buffer) log-buffer)
+        (message nil))
+            
+      compile-successful)))
 
 
 ;;;###autoload
@@ -424,7 +469,7 @@ subprocess, i.e. non-nil on success, nil on error."
     (byte-recompile-directory directory arg force)))
 
 
-;;;; Removed Forms 
+;;;; REMOVED FORMS 
 ;;;
 ;;; These forms may break without warning, as closures carrying along
 ;;; their lexical environment even to a subprocess is not documented
