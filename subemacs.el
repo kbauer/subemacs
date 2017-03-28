@@ -188,7 +188,7 @@ Passes values to parent process as alist."
       (let ((subemacs-error t))
         (unwind-protect
             (condition-case err
-                (prog1 (list (cons 'value (eval ',form)))
+                (prog1 (list (cons 'value ,form))
                   (setq subemacs-error nil))
               (error 
                (prog1 (list (cons 'error err))
