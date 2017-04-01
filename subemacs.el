@@ -23,32 +23,6 @@
 
 ;;; Commentary:
 
-;; ## Possible deprecation?
-;; 
-;; I have recently come across
-;; [async.el](https://github.com/jwiegley/emacs-async). It implements
-;; a superset of the core functionality of `subemacs`, with the
-;; function `async-sandbox` being a replacement for `subemacs-eval`.
-;; 
-;; The interactive functions from `subemacs` remain potentially
-;; useful, but for package development
-;; [async.el](https://github.com/jwiegley/emacs-async) should be
-;; preferred.
-;; 
-;; One possibly important difference is the handling of output.
-;; `subemacs-eval` forwards messages to the parent process, while the
-;; `async.el` functions discard them.
-;; 
-;; ~~~
-;; TODO Another possible usecase: Chaining external commands and elisp.
-;; TODO     Currently emacs has no good method to execute multiple
-;; TODO     external commands in an asynchronous shell buffer, 
-;; TODO     executing emacs lisp in between.
-;; ~~~
-;; 
-;;
-;; # Subemacs — Evaluating expressions in a subprocess
-;; 
 ;; Using the function `subemacs-eval', a form can be synchronously
 ;; evaluated in a freshly started Emacs process, which inherits only
 ;; the `load-path' from the current process. 
@@ -106,14 +80,56 @@
 ;; Emacs versions.
 ;;
 ;;
+;; ## Comparison to async.el
+;; 
+;; [async.el](https://github.com/jwiegley/emacs-async) implements a
+;; superset of the functionality of `subemacs.el', with
+;; `async-sandbox' having essentially the functionality of
+;; `subemacs-eval'. However, a few complementary properties allow
+;; `subemacs.el' to remain useful.
+;; 
+;;   - `subemacs-eval' forwards the STDOUT and STDERR of the
+;;     subprocess and allows access to the contents as a string.
+;;     `async-sandbox' does not.
+;;   
+;;   - With `subemacs-byte-compile-file', the module contains a 
+;;     useful development tool, that is optimized for quickly 
+;;     checking against compiler warnings.
+;; 
+;;   - On Windows at least, `async-sandbox' has more overhead.
+;;   
+;;         (async-sandbox '(lambda ())) ; ≈ 0.75 seconds
+;;         (subemacs-eval '(progn))     ; ≈ 0.35 seconds
+;;   
+;;   - On Windows, I sometimes experience `async-sandbox' hanging,
+;;     while I never had such a problem with `subemacs-eval'.
+;; 
+;; 
+;; <!--
+;; TODO Another possible usecase: Chaining external commands and elisp.
+;; TODO     Currently emacs has no good method to execute multiple
+;; TODO     external commands in an asynchronous shell buffer, 
+;; TODO     executing emacs lisp in between.
+;; -->
+;; 
+;; ## Changelog
+;; 
+;; ### v1.1
+;; 
+;; - Rewrote `subemacs-byte-compile-file'. 
+;; - Adjusted README text to describe usecases compared to `async.el'.
+;; 
+;; ### v1.0
+;; 
+;; Original release. Supports exclusively synchronous execution. 
+
+
 
 ;;; Code:
 
 ;; -*- mode:emacs-lisp;coding:utf-8-unix;lexical-binding:t;byte-compile-dynamic:t; -*-
 
 (require 'cl-macs)
-
-;;; TODO Consider option to run (load load-file-name) by default. 
 
 ;;;; AUXILIARY FUNCTIONS 
 
@@ -372,7 +388,8 @@ error.
 Returns the return value of `byte-compile-file' in the
 subprocess, i.e. non-nil on success, nil on error.
 
-LOAD-1 are provided for backwards compatibility. 
+LOAD-1 are provided for backwards compatibility and should
+normally be nil.
 
 If LOAD is non-nil, load the compiled file after compiling
 successfully. If LOAD is 'source, load FILE-NAME instead.
