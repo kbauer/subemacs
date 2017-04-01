@@ -40,9 +40,9 @@ serve as a demonstration of the use of `subemacs-eval`.
 
 ## Why not subemacs-funcall?
 
-Originally I had planned to implement `subemacs-funcall`, passing
-functions to the subprocess would allow compile-time checking of
-the passed expressions for issues. 
+Originally I had planned to implement `subemacs-funcall`, as
+passing functions to the subprocess would allow compile-time
+checking of the passed expressions for issues.
 
 Passing a `lambda` form to a hypothetical `subemacs-funcall` in an
 environment where `lexical-binding` is enabled, will capture the
@@ -53,6 +53,10 @@ implementation of `subemacs-funcall` would either require enforcing
 unexpected limitations (e.g. not allowing closures) or risk the
 creation of code that depends on an undocumented feature of current
 Emacs versions.
+
+Passing a quoted `lambda` form would avoid these problems, but
+would also sacrifice compile-time checks, and thus the only
+advantage.
 
 ## Comparison to async.el
 
